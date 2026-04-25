@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { normalizeArticles } from "./insights/utils/articleAdapters";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -155,19 +156,34 @@ function generateArticles(count) {
     for (let t = 0; t < numTakeaways; t++) takeaways.push(shuffledTakeaways[t]);
 
     const firmData = FIRMS[firm];
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
     articles.push({
       id: i, title, firm, sector, asset, contentType, date, readTime, tags,
       bookmarked: false,
       signal: seededRand(i * 71 + 16) > 0.6,
       summary, author, takeaways,
-      sourceUrl: firmData.url,
+      sourceUrl: `${firmData.url}/${slug}`,
     });
   }
   return articles.sort((a, b) => b.date - a.date);
 }
 
-const ALL_ARTICLES = generateArticles(120);
+const BOOKMARKS_STORAGE_KEY = "crypto-ai-insights-bookmarks";
+
+function loadBookmarkedIds() {
+  try {
+    const raw = localStorage.getItem(BOOKMARKS_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function saveBookmarkedIds(articles) {
+  try {
+    const ids = articles.filter(a => a.bookmarked).map(a => a.id);
+    localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(ids));
+  } catch {}
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -227,8 +243,8 @@ const Pill = ({ children, active, onClick, color, small }) => (
   }}>{children}</button>
 );
 
-const StatCard = ({ label, value, sub, accent }) => (
-  <div style={{ padding: "20px 24px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px", flex: 1, minWidth: 160 }}>
+const StatCard = ({ label, value, sub, accent, onClick, active }) => (
+  <div onClick={onClick} style={{ padding: "20px 24px", background: active ? `${accent}10` : "rgba(255,255,255,0.02)", border: `1px solid ${active ? `${accent}40` : "rgba(255,255,255,0.06)"}`, borderRadius: "12px", flex: 1, minWidth: 160, cursor: onClick ? "pointer" : "default", transition: "all 0.2s" }}>
     <div style={{ fontSize: "11px", fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, fontWeight: 500 }}>{label}</div>
     <div style={{ fontSize: "28px", fontFamily: "'Fira Code', monospace", color: accent || "#fff", fontWeight: 600, lineHeight: 1 }}>{value}</div>
     {sub && <div style={{ fontSize: "12px", fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.3)", marginTop: 6 }}>{sub}</div>}
@@ -266,10 +282,10 @@ const ArticleDetail = ({ article, onClose, onBookmark }) => {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", animation: "fadeIn 0.2s ease" }}/>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}/>
       <div ref={panelRef} style={{
         position: "fixed", top: 0, right: 0, bottom: 0, width: "min(600px, 90vw)", zIndex: 201,
-        background: "#111116", borderLeft: "1px solid rgba(255,255,255,0.08)", overflowY: "auto", animation: "slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        background: "#111116", borderLeft: "1px solid rgba(255,255,255,0.08)", overflowY: "auto",
       }}>
         <div style={{ position: "sticky", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${firmInfo.color}, ${firmInfo.color}40, transparent)`, zIndex: 10 }}/>
 
@@ -470,7 +486,7 @@ const Dropdown = ({ label, options, selected, onSelect, multi }) => {
         <Icon type="chevron" size={12}/>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100, background: "#1a1a1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", padding: "6px", minWidth: 200, maxHeight: 280, overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100, background: "#1e1e24", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", padding: "6px", minWidth: 200, maxHeight: 280, overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.7)" }}>
           {multi && selected.length > 0 && (
             <button onClick={() => onSelect([])} style={{ width: "100%", padding: "6px 10px", background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "11px", fontFamily: "'DM Sans', sans-serif", cursor: "pointer", textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: 4 }}>Clear all</button>
           )}
@@ -481,8 +497,8 @@ const Dropdown = ({ label, options, selected, onSelect, multi }) => {
                 if (multi) { onSelect(isSelected ? selected.filter(s => s !== opt) : [...selected, opt]); }
                 else { onSelect(isSelected ? null : opt); setOpen(false); }
               }} style={{
-                width: "100%", padding: "7px 10px", background: isSelected ? "rgba(255,255,255,0.08)" : "transparent",
-                border: "none", borderRadius: "6px", color: isSelected ? "#fff" : "rgba(255,255,255,0.6)",
+                width: "100%", padding: "7px 10px", background: isSelected ? "#2a2a32" : "#1e1e24",
+                border: "none", borderRadius: "6px", color: isSelected ? "#fff" : "rgba(255,255,255,0.85)",
                 fontSize: "12px", fontFamily: "'DM Sans', sans-serif", cursor: "pointer", textAlign: "left",
                 transition: "all 0.15s", display: "flex", alignItems: "center", gap: 8,
               }}>
@@ -503,7 +519,7 @@ const Dropdown = ({ label, options, selected, onSelect, multi }) => {
 // ─── Main App ────────────────────────────────────────────────────────────────
 
 export default function CryptoAIInsights() {
-  const [articles, setArticles] = useState(ALL_ARTICLES);
+  const [articles, setArticles] = useState([]);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState("grid");
   const [sortBy, setSortBy] = useState("latest");
@@ -517,14 +533,43 @@ export default function CryptoAIInsights() {
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      let items;
+      try {
+        const res = await fetch("/api/research");
+        const data = await res.json();
+        if (data.items?.length) {
+          items = normalizeArticles(data.items);
+        }
+      } catch {}
+      if (!items?.length) {
+        items = generateArticles(120);
+      }
+      if (cancelled) return;
+      const saved = loadBookmarkedIds();
+      if (saved.size > 0) {
+        setArticles(items.map(a => saved.has(a.id) ? { ...a, bookmarked: true } : a));
+      } else {
+        setArticles(items);
+      }
+      setMounted(true);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     document.body.style.overflow = selectedArticle ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [selectedArticle]);
 
   const toggleBookmark = useCallback((id) => {
-    setArticles(prev => prev.map(a => a.id === id ? { ...a, bookmarked: !a.bookmarked } : a));
+    setArticles(prev => {
+      const next = prev.map(a => a.id === id ? { ...a, bookmarked: !a.bookmarked } : a);
+      saveBookmarkedIds(next);
+      return next;
+    });
     setSelectedArticle(prev => prev && prev.id === id ? { ...prev, bookmarked: !prev.bookmarked } : prev);
   }, []);
 
@@ -563,24 +608,7 @@ export default function CryptoAIInsights() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#fff", fontFamily: "'DM Sans', sans-serif" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@300;400;500;600&display=swap');
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes slideInRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-        @keyframes grain { 0%, 100% { transform: translate(0,0); } 10% { transform: translate(-5%,-10%); } 50% { transform: translate(12%,9%); } 90% { transform: translate(-1%,7%); } }
-        select option { background: #1a1a1f; color: #fff; }
-      `}</style>
-
-      <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", opacity: 0.03, backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`, animation: "grain 8s steps(10) infinite" }}/>
-      <div style={{ position: "fixed", top: "-20%", right: "-10%", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%)", zIndex: 0, pointerEvents: "none" }}/>
-      <div style={{ position: "fixed", bottom: "-20%", left: "-10%", width: "40vw", height: "40vw", background: "radial-gradient(circle, rgba(232,85,58,0.04) 0%, transparent 70%)", zIndex: 0, pointerEvents: "none" }}/>
+      <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", opacity: 0.03, backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }}/>
 
       {selectedArticle && <ArticleDetail article={selectedArticle} onClose={() => setSelectedArticle(null)} onBookmark={toggleBookmark}/>}
 
@@ -601,7 +629,7 @@ export default function CryptoAIInsights() {
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10B981" }}/>
                 <span style={{ fontSize: "11px", fontFamily: "'Fira Code', monospace", color: "rgba(255,255,255,0.3)" }}>LIVE</span>
               </div>
-              <span style={{ fontSize: "11px", fontFamily: "'Fira Code', monospace", color: "rgba(255,255,255,0.2)" }}>{formatDate(new Date())}</span>
+              <span style={{ fontSize: "11px", fontFamily: "'Fira Code', monospace", color: "rgba(255,255,255,0.2)" }}>{mounted ? formatDate(new Date()) : "\u00A0"}</span>
             </div>
           </div>
         </header>
@@ -611,11 +639,11 @@ export default function CryptoAIInsights() {
           <StatCard label="Total Research" value={articles.length} sub={`From ${uniqueFirms} firms`} accent="#fff"/>
           <StatCard label="Signal-rated" value={signalCount} sub="High-conviction pieces" accent="#FBBF24"/>
           <StatCard label="This Week" value={articles.filter(a => (Date.now() - a.date) < 7 * 86400000).length} sub="New publications" accent="#22D3EE"/>
-          <StatCard label="Bookmarked" value={bookmarkedCount} sub="Your reading list" accent="#A78BFA"/>
+          <StatCard label="Bookmarked" value={bookmarkedCount} sub="Your reading list" accent="#A78BFA" onClick={() => setShowBookmarked(prev => !prev)} active={showBookmarked}/>
         </div>
 
         {/* Search & Filters */}
-        <div style={{ padding: "20px 0", borderTop: "1px solid rgba(255,255,255,0.04)", animation: mounted ? "fadeUp 0.6s ease 0.2s both" : "none" }}>
+        <div style={{ padding: "20px 0", borderTop: "1px solid rgba(255,255,255,0.04)", animation: mounted ? "fadeUp 0.6s ease 0.2s both" : "none", position: "relative", zIndex: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "10px", padding: "10px 16px", marginBottom: 16 }}>
             <Icon type="search" size={16}/>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search research by title, firm, sector, or asset..." style={{ flex: 1, background: "none", border: "none", outline: "none", color: "#fff", fontSize: "14px", fontFamily: "'DM Sans', sans-serif" }}/>
